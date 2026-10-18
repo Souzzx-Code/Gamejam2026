@@ -7,7 +7,7 @@
 ## 1. Equipe
 
 **Nome da equipe:** Fox
-Número do grupo: 4
+**Número do grupo:** 4
 
 | Integrante | Curso | Período | Semestre |
 |---|---|---|---|
