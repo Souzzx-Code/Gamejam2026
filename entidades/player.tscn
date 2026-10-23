@@ -2,10 +2,11 @@
 
 [ext_resource type="Script" uid="uid://cn0udsg5vup6a" path="res://scripts/player.gd" id="1_le3lr"]
 [ext_resource type="Texture2D" uid="uid://d2twuebysgttj" path="res://sprites/Vampiro/alfa.png" id="2_11m8g"]
+[ext_resource type="Texture2D" uid="uid://b5jy2gsectdca" path="res://sprites/Vampiro/jump.png" id="3_kp4u0"]
 
 [sub_resource type="CapsuleShape2D" id="CapsuleShape2D_5kiuu"]
-radius = 7.0
-height = 16.0
+radius = 41.0
+height = 112.0
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_kp4u0"]
 atlas = ExtResource("2_11m8g")
@@ -27,23 +28,43 @@ region = Rect2(768, 0, 256, 256)
 atlas = ExtResource("2_11m8g")
 region = Rect2(1024, 0, 256, 256)
 
-[sub_resource type="AtlasTexture" id="AtlasTexture_11m8g"]
-atlas = ExtResource("2_11m8g")
+[sub_resource type="AtlasTexture" id="AtlasTexture_rcte5"]
+atlas = ExtResource("3_kp4u0")
 region = Rect2(0, 0, 256, 256)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_1wo38"]
+atlas = ExtResource("3_kp4u0")
+region = Rect2(0, 256, 256, 256)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_l7jkh"]
+atlas = ExtResource("3_kp4u0")
+region = Rect2(0, 512, 256, 256)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_kq7hh"]
+atlas = ExtResource("3_kp4u0")
+region = Rect2(0, 768, 256, 256)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_1bqy4"]
+atlas = ExtResource("3_kp4u0")
+region = Rect2(0, 1024, 256, 256)
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_r4ns2"]
 atlas = ExtResource("2_11m8g")
-region = Rect2(0, 256, 256, 256)
+region = Rect2(0, 0, 256, 256)
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_s8mye"]
 atlas = ExtResource("2_11m8g")
-region = Rect2(0, 512, 256, 256)
+region = Rect2(0, 256, 256, 256)
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_kd8fs"]
 atlas = ExtResource("2_11m8g")
-region = Rect2(0, 768, 256, 256)
+region = Rect2(0, 512, 256, 256)
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_wlwsy"]
+atlas = ExtResource("2_11m8g")
+region = Rect2(0, 768, 256, 256)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_remub"]
 atlas = ExtResource("2_11m8g")
 region = Rect2(0, 1024, 256, 256)
 
@@ -71,8 +92,25 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
-"texture": SubResource("AtlasTexture_11m8g")
+"texture": SubResource("AtlasTexture_rcte5")
 }, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_1wo38")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_l7jkh")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_kq7hh")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_1bqy4")
+}],
+"loop": 1,
+"name": &"jump",
+"speed": 5.0
+}, {
+"frames": [{
 "duration": 1.0,
 "texture": SubResource("AtlasTexture_r4ns2")
 }, {
@@ -84,23 +122,44 @@ animations = [{
 }, {
 "duration": 1.0,
 "texture": SubResource("AtlasTexture_wlwsy")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_remub")
 }],
 "loop": 1,
 "name": &"walk",
 "speed": 5.0
 }]
 
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_p32a2"]
+size = Vector2(74, 111)
+
 [node name="Player" type="CharacterBody2D" unique_id=1899720134]
-position = Vector2(30, 37)
+position = Vector2(112, 120)
 script = ExtResource("1_le3lr")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1038376138]
 visible = false
-position = Vector2(1, 0)
+position = Vector2(207, 43)
 shape = SubResource("CapsuleShape2D_5kiuu")
 
 [node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="." unique_id=1471305729]
-position = Vector2(0.99999994, -0.1015659)
-scale = Vector2(0.08752443, 0.09454345)
+position = Vector2(207, 50.000004)
+scale = Vector2(0.52578735, 0.5679529)
 sprite_frames = SubResource("SpriteFrames_p32a2")
-animation = &"idle"
+animation = &"walk"
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=2087333797]
+position = Vector2(714, 346)
+limit_left = 13
+limit_top = 15
+limit_right = 1913
+limit_bottom = 1054
+position_smoothing_enabled = true
+
+[node name="InteractionArea" type="Area2D" parent="." unique_id=220081844]
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="InteractionArea" unique_id=554731926]
+visible = false
+position = Vector2(206, 42.5)
+shape = SubResource("RectangleShape2D_p32a2")

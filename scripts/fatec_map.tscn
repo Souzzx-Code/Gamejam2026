@@ -1,0 +1,1041 @@
+[gd_scene format=3 uid="uid://c3xe0gagp3c6g"]
+
+[sub_resource type="GDScript" id="GDScript_7y7lw"]
+script/source = "class_name FatecMapPixel
+extends Node2D
+## Mapa PIXEL ART procedural: FATEC Campinas - Game Jam 2026 \"O Retorno do Vampiro\"
+## Godot 4.x. Anexe este script a um Node2D vazio e rode a cena.
+##
+## Andares: G (térreo), 1, 2 e 3 (o 3 é parecido com o 1).
+##
+## Como funciona o visual:
+##   Todo o cenário é desenhado em uma imagem de baixa resolução (352 x 246 \"pixels de arte\")
+##   e ampliada 4x com filtro NEAREST -> pixels grandes e nítidos, sem arquivos de imagem.
+##   Tochas, fantasmas e morcegos são Sprite2D animados por cima do cenário.
+##
+## Física: lajes, paredes e rampas das escadas (StaticBody2D); portas e elevadores (Area2D).
+## Dica: em Project Settings ligue \"Rendering > 2D > Snap 2D Transforms to Pixel\"
+## e \"Textures > Canvas Textures > Default Texture Filter = Nearest\".
+
+signal door_entered(door_id: String, body: Node2D)
+signal elevator_entered(floor_id: String, body: Node2D)
+signal elevator_exited(floor_id: String, body: Node2D)
+
+@export var use_lighting: bool = true
+@export var ambient_color: Color = Color(0.7, 0.64, 0.88)
+
+# ---------------------------------------------------------------------------
+# Geometria (unidades de MUNDO = pixels de arte x PX)
+# ---------------------------------------------------------------------------
+const PX := 4
+const ART_W := 352
+const ART_H := 246
+const MAP_SIZE := Vector2(1408, 984)
+
+const LEFT := 20.0
+const RIGHT := 1388.0
+const TOP := 16.0
+const SLAB_H := 24.0
+const STAIR_X0 := 32.0
+const STAIR_X1 := 300.0
+const SHAFT_L := 764.0
+const SHAFT_R := 944.0
+const ELEV_X := 856.0
+
+const Y_G := 960.0
+const Y_1 := 720.0
+const Y_2 := 480.0
+const Y_3 := 240.0
+const FLOORS := {\"G\": Y_G, \"1\": Y_1, \"2\": Y_2, \"3\": Y_3}
+const CEILS := {\"G\": 744.0, \"1\": 504.0, \"2\": 264.0, \"3\": 16.0}
+const FLOOR_ORDER := [\"G\", \"1\", \"2\", \"3\"]
+
+# Mesmas medidas em pixels de arte
+const A_LEFT := 5
+const A_RIGHT := 347
+const A_STAIR0 := 8
+const A_STAIR1 := 75
+const A_SHAFT_L := 191
+const A_SHAFT_R := 236
+const A_ELEV := 214
+
+const SPAWNS := {
+	\"entrada\": Vector2(520, Y_G),
+	\"recepcao\": Vector2(1100, Y_G),
+	\"andar_1\": Vector2(520, Y_1),
+	\"andar_2\": Vector2(520, Y_2),
+	\"andar_3\": Vector2(520, Y_3),
+}
+
+# ---------------------------------------------------------------------------
+# Paleta
+# ---------------------------------------------------------------------------
+const SKY := Color(\"0b1030\")
+const INK := Color(\"14101a\")
+const BRICK1 := Color(\"a14d36\")
+const BRICK2 := Color(\"86402c\")
+const MORTAR := Color(\"4a2218\")
+const WALL := Color(\"d6c7a1\")
+const WALL_SH := Color(\"c2b18a\")
+const WALL_HI := Color(\"e8dcbd\")
+const STRIPE := Color(\"b45a40\")
+const STRIPE_HI := Color(\"c9735a\")
+const STRIPE_DK := Color(\"8e4430\")
+const PIPE := Color(\"5b5f6b\")
+const PIPE_HI := Color(\"7d8290\")
+const SLAB := Color(\"6e6e72\")
+const SLAB_HI := Color(\"a0a0a6\")
+const SLAB_DK := Color(\"45454c\")
+const WOOD := Color(\"8a5a2b\")
+const WOOD_HI := Color(\"b07a3e\")
+const WOOD_DK := Color(\"4e3118\")
+const ORANGE := Color(\"f08a24\")
+const ORANGE_DK := Color(\"b8501a\")
+const YELLOW := Color(\"ffe27a\")
+const GREEN := Color(\"4c7a2a\")
+const GLASS := Color(\"7fd8e6\")
+const STEEL := Color(\"a4abb3\")
+const STEEL_DK := Color(\"6c737a\")
+const WHITE := Color(\"eef0f4\")
+const BLUE := Color(\"2a6fd6\")
+const CYAN := Color(\"39a0d9\")
+const PURPLE := Color(\"6a3fa0\")
+const PURPLE_DK := Color(\"3a2450\")
+
+# Paleta dos sprites (cada letra = uma cor)
+const PAL := {
+	\"w\": Color(\"eef0f4\"), \"k\": Color(\"1a1424\"), \"e\": Color(\"202030\"),
+	\"o\": Color(\"f08a24\"), \"y\": Color(\"ffe27a\"), \"B\": Color(\"8a5a2b\"),
+	\"G\": Color(\"6d7f66\"), \"b\": Color(\"4a4a58\"), \"d\": Color(\"3a3a44\"),
+	\"h\": Color(\"3a2a1a\"), \"f\": Color(\"d9a76a\"), \"s\": Color(\"c8a040\"),
+	\"c\": Color(\"7fd8e6\"),
+}
+
+# ---------------------------------------------------------------------------
+# Sprites (linhas de texto = pixels)
+# ---------------------------------------------------------------------------
+const TORCH_FRAMES := [
+	[\"...o...\", \"..ooo..\", \"..oyo..\", \".ooyoo.\", \".oyyyo.\", \"..ooo..\", \"..kkk..\", \"..BkB..\", \"...B...\", \"...B...\"],
+	[\"..o....\", \"..oo...\", \"..oyo..\", \".ooyoo.\", \".oyyyo.\", \"..ooo..\", \"..kkk..\", \"..BkB..\", \"...B...\", \"...B...\"],
+	[\"....o..\", \"...oo..\", \"..oyo..\", \".ooyoo.\", \".oyyyo.\", \"..ooo..\", \"..kkk..\", \"..BkB..\", \"...B...\", \"...B...\"],
+]
+const GHOST := [
+	\"..wwwww..\", \".wwwwwww.\", \"wwwwwwwww\", \"wwkkwkkww\", \"wwkkwkkww\", \"wwwwwwwww\",
+	\"wwwwkwwww\", \"wwwwwwwww\", \"wwwwwwwww\", \"wwwwwwwww\", \"wwwwwwwww\", \"ww.www.ww\",
+]
+const BAT_FRAMES := [
+	[\"kk.....kk\", \"kkk.k.kkk\", \".kkkkkkk.\", \"..kk.kk..\"],
+	[\"...k.k...\", \".kkkkkkk.\", \"kkkkkkkkk\", \"kk.....kk\"],
+]
+const SKULL := [
+	\".wwwww.\", \"wwwwwww\", \"wewwwew\", \"wewwwew\", \"wwwewww\", \".wwwww.\", \".wewew.\",
+]
+const ZOMBIE := [
+	\"..GGGG...\", \".GGGGGG..\", \".GyGGyG..\", \".GGGGGG..\", \"..GkkG...\", \"...GG....\",
+	\".bbbbbb..\", \"bbbbbbbGG\", \"bbbbbb.GG\", \".bbbbbb..\", \".bbbbbb..\", \".dd..dd..\",
+	\".dd..dd..\", \".dd..dd..\", \".kk..kk..\",
+]
+const SCARECROW := [
+	\"....h....\", \"...hhh...\", \".hhhhhhh.\", \"...fff...\", \"..fkfkf..\", \"...fff...\",
+	\"..sssss..\", \"sssssssss\", \"..sBBBs..\", \"..BBBBB..\", \"..BBBBB..\", \"...B.B...\",
+	\"...B.B...\", \"...B.B...\",
+]
+
+# ---------------------------------------------------------------------------
+# Dados de cenário
+# ---------------------------------------------------------------------------
+# x em coordenadas de mundo
+const DOORS := [
+	{\"id\": \"lab_3\", \"f\": \"3\", \"x\": 368.0, \"label\": \"LAB 3\", \"open\": false},
+	{\"id\": \"sala_302\", \"f\": \"3\", \"x\": 496.0, \"label\": \"SALA 302\", \"open\": false},
+	{\"id\": \"diretoria\", \"f\": \"3\", \"x\": 660.0, \"label\": \"DIRETORIA\", \"open\": false},
+	{\"id\": \"lab_max\", \"f\": \"2\", \"x\": 700.0, \"label\": \"LAB MAX\", \"open\": true},
+	{\"id\": \"sala_2_dir\", \"f\": \"2\", \"x\": 1040.0, \"label\": \"\", \"open\": false},
+	{\"id\": \"lab_1\", \"f\": \"1\", \"x\": 368.0, \"label\": \"LAB 1\", \"open\": false},
+	{\"id\": \"sala_202\", \"f\": \"1\", \"x\": 496.0, \"label\": \"SALA 202\", \"open\": false},
+	{\"id\": \"coordenacao\", \"f\": \"1\", \"x\": 660.0, \"label\": \"COORDENAÇÃO\", \"open\": false},
+	{\"id\": \"saida_lateral\", \"f\": \"G\", \"x\": 1360.0, \"label\": \"\", \"open\": false},
+]
+const TORCH_X := {
+	\"G\": [405.0, 664.0, 1128.0, 1272.0],
+	\"1\": [288.0, 756.0, 956.0],
+	\"2\": [288.0, 756.0, 956.0],
+	\"3\": [288.0, 756.0, 956.0],
+}
+# [andar, x (mundo), altura do fundo do fantasma acima do chão]
+const GHOSTS := [
+	[\"1\", 340.0, 140.0], [\"1\", 440.0, 132.0], [\"1\", 560.0, 138.0],
+	[\"3\", 380.0, 140.0], [\"3\", 600.0, 130.0],
+]
+# [andar, x (mundo), altura acima do chão]
+const BAT_SPOTS := [
+	[\"G\", 276.0, 170.0], [\"G\", 320.0, 140.0], [\"G\", 300.0, 110.0], [\"G\", 708.0, 100.0],
+	[\"1\", 110.0, 200.0], [\"1\", 708.0, 150.0], [\"2\", 100.0, 200.0], [\"2\", 120.0, 160.0],
+	[\"3\", 110.0, 180.0],
+]
+# r = metade da largura em pixels de arte
+const PUMPKINS := [
+	{\"f\": \"G\", \"x\": 1012.0, \"r\": 12},
+	{\"f\": \"1\", \"x\": 960.0, \"r\": 4},
+	{\"f\": \"2\", \"x\": 952.0, \"r\": 4},
+	{\"f\": \"3\", \"x\": 1352.0, \"r\": 4},
+]
+
+var _lights: Array[PointLight2D] = []
+var _torches: Array[Sprite2D] = []
+var _torch_tex: Array[ImageTexture] = []
+var _ghosts: Array[Sprite2D] = []
+var _ghost_y: Array[float] = []
+var _bats: Array[Sprite2D] = []
+var _bat_pos: Array[Vector2] = []
+var _bat_tex: Array[ImageTexture] = []
+var _t := 0.0
+
+
+# ===========================================================================
+# Canvas de pixels (desenha numa Image em coordenadas de arte)
+# ===========================================================================
+class PixelCanvas:
+	extends RefCounted
+
+	const FONT := {
+		\"A\": [2, 5, 7, 5, 5], \"B\": [6, 5, 6, 5, 6], \"C\": [3, 4, 4, 4, 3], \"D\": [6, 5, 5, 5, 6],
+		\"E\": [7, 4, 6, 4, 7], \"F\": [7, 4, 6, 4, 4], \"G\": [3, 4, 5, 5, 3], \"H\": [5, 5, 7, 5, 5],
+		\"I\": [7, 2, 2, 2, 7], \"J\": [1, 1, 1, 5, 2], \"K\": [5, 5, 6, 5, 5], \"L\": [4, 4, 4, 4, 7],
+		\"M\": [5, 7, 7, 5, 5], \"N\": [7, 5, 5, 5, 5], \"O\": [2, 5, 5, 5, 2], \"P\": [6, 5, 6, 4, 4],
+		\"Q\": [2, 5, 5, 6, 3], \"R\": [6, 5, 6, 5, 5], \"S\": [3, 4, 2, 1, 6], \"T\": [7, 2, 2, 2, 2],
+		\"U\": [5, 5, 5, 5, 7], \"V\": [5, 5, 5, 5, 2], \"W\": [5, 5, 7, 7, 5], \"X\": [5, 5, 2, 5, 5],
+		\"Y\": [5, 5, 2, 2, 2], \"Z\": [7, 1, 2, 4, 7],
+		\"0\": [7, 5, 5, 5, 7], \"1\": [2, 6, 2, 2, 7], \"2\": [6, 1, 2, 4, 7], \"3\": [6, 1, 2, 1, 6],
+		\"4\": [5, 5, 7, 1, 1], \"5\": [7, 4, 6, 1, 6], \"6\": [3, 4, 7, 5, 7], \"7\": [7, 1, 2, 2, 2],
+		\"8\": [7, 5, 7, 5, 7], \"9\": [7, 5, 7, 1, 6],
+		\"-\": [0, 0, 7, 0, 0], \".\": [0, 0, 0, 0, 2], \"!\": [2, 2, 2, 0, 2], \" \": [0, 0, 0, 0, 0],
+	}
+
+	var img: Image
+	var w: int
+	var h: int
+
+	func _init(width: int, height: int) -> void:
+		w = width
+		h = height
+		img = Image.create(w, h, false, Image.FORMAT_RGBA8)
+		img.fill(Color(0, 0, 0, 0))
+
+	func hash2(x: int, y: int) -> float:
+		return fposmod(sin(float(x) * 12.9898 + float(y) * 78.233) * 43758.5453, 1.0)
+
+	func px(x: int, y: int, c: Color) -> void:
+		if x < 0 or y < 0 or x >= w or y >= h:
+			return
+		if c.a < 1.0:
+			c = img.get_pixel(x, y).blend(c)
+		img.set_pixel(x, y, c)
+
+	func rect(x: int, y: int, rw: int, rh: int, c: Color) -> void:
+		if rw <= 0 or rh <= 0:
+			return
+		if c.a >= 1.0:
+			img.fill_rect(Rect2i(x, y, rw, rh), c)
+		else:
+			for yy in range(y, y + rh):
+				for xx in range(x, x + rw):
+					px(xx, yy, c)
+
+	func hline(x: int, y: int, len_: int, c: Color) -> void:
+		rect(x, y, len_, 1, c)
+
+	func vline(x: int, y: int, len_: int, c: Color) -> void:
+		rect(x, y, 1, len_, c)
+
+	func outline(x: int, y: int, rw: int, rh: int, c: Color) -> void:
+		hline(x, y, rw, c)
+		hline(x, y + rh - 1, rw, c)
+		vline(x, y, rh, c)
+		vline(x + rw - 1, y, rh, c)
+
+	func line(x0: int, y0: int, x1: int, y1: int, c: Color) -> void:
+		var dx := absi(x1 - x0)
+		var dy := -absi(y1 - y0)
+		var sx := 1 if x0 < x1 else -1
+		var sy := 1 if y0 < y1 else -1
+		var err := dx + dy
+		while true:
+			px(x0, y0, c)
+			if x0 == x1 and y0 == y1:
+				break
+			var e2 := 2 * err
+			if e2 >= dy:
+				err += dy
+				x0 += sx
+			if e2 <= dx:
+				err += dx
+				y0 += sy
+
+	func disc(cx: int, cy: int, r: int, c: Color) -> void:
+		for yy in range(-r, r + 1):
+			for xx in range(-r, r + 1):
+				if xx * xx + yy * yy <= r * r + r:
+					px(cx + xx, cy + yy, c)
+
+	func ellipse(cx: int, cy: int, rx: int, ry: int, c: Color) -> void:
+		for yy in range(-ry, ry + 1):
+			for xx in range(-rx, rx + 1):
+				var fx := float(xx) / (rx + 0.5)
+				var fy := float(yy) / (ry + 0.5)
+				if fx * fx + fy * fy <= 1.0:
+					px(cx + xx, cy + yy, c)
+
+	func poly(pts: Array, c: Color) -> void:
+		var miny := 1000000
+		var maxy := -1000000
+		for p in pts:
+			miny = mini(miny, p.y)
+			maxy = maxi(maxy, p.y)
+		for y in range(miny, maxy + 1):
+			var xs: Array[int] = []
+			for i in pts.size():
+				var a: Vector2i = pts[i]
+				var b: Vector2i = pts[(i + 1) % pts.size()]
+				if (a.y <= y and b.y > y) or (b.y <= y and a.y > y):
+					var t := float(y - a.y) / float(b.y - a.y)
+					xs.append(roundi(a.x + t * (b.x - a.x)))
+			xs.sort()
+			for i in range(0, xs.size() - 1, 2):
+				hline(xs[i], y, xs[i + 1] - xs[i] + 1, c)
+
+	func sprite(rows: Array, pal: Dictionary, x: int, y: int, flip := false) -> void:
+		for ry in rows.size():
+			var row: String = rows[ry]
+			var n := row.length()
+			for rx in n:
+				var ch := row[rx]
+				if ch == \".\" or not pal.has(ch):
+					continue
+				var dx := (n - 1 - rx) if flip else rx
+				px(x + dx, y + ry, pal[ch])
+
+	func bricks(x: int, y: int, tw: int, th: int, base: Color, mortar: Color, seed_: int = 0) -> void:
+		rect(x, y, tw, th, mortar)
+		var row := 0
+		var yy := y
+		while yy < y + th:
+			var bh := mini(3, y + th - yy)
+			var off := 0 if row % 2 == 0 else 3
+			var xx := x - off
+			while xx < x + tw:
+				var bx := maxi(xx, x)
+				var bwid := mini(xx + 7, x + tw) - bx
+				if bwid > 1:
+					var n := hash2(xx + seed_, yy)
+					var col := base
+					if n > 0.8:
+						col = base.lightened(0.08)
+					elif n < 0.2:
+						col = base.darkened(0.1)
+					rect(bx, yy, bwid - 1, maxi(bh - 1, 1), col)
+					hline(bx, yy, bwid - 1, col.lightened(0.12))
+				xx += 7
+			yy += 3
+			row += 1
+
+	func slab(x: int, y: int, sw: int, sh: int, base: Color, hi: Color, dk: Color) -> void:
+		rect(x, y, sw, sh, base)
+		hline(x, y, sw, hi)
+		hline(x, y + sh - 1, sw, dk)
+		for xx in range(x, x + sw):
+			if hash2(xx, y) > 0.94:
+				px(xx, y + 1 + int(hash2(y, xx) * (sh - 2)), dk)
+
+	# ---- texto em fonte pixel 3x5 ----
+	func text_width(s: String, scale := 1) -> int:
+		var longest := 0
+		for ln in s.split(\"\\n\"):
+			longest = maxi(longest, ln.length() * 4 * scale - scale)
+		return longest
+
+	func text(s: String, x: int, y: int, col: Color, scale := 1) -> void:
+		var cy := y
+		for ln in s.split(\"\\n\"):
+			var cx := x
+			for ch in ln:
+				_glyph(ch, cx, cy, col, scale)
+				cx += 4 * scale
+			cy += 6 * scale
+
+	func text_center(s: String, cx: int, y: int, col: Color, scale := 1) -> void:
+		var cy := y
+		for ln in s.split(\"\\n\"):
+			var tw := ln.length() * 4 * scale - scale
+			text(ln, cx - tw / 2, cy, col, scale)
+			cy += 6 * scale
+
+	func _glyph(ch: String, x: int, y: int, col: Color, scale: int) -> void:
+		var key := ch
+		var extra := \"\"
+		if ch == \"Ã\":
+			key = \"A\"
+			extra = \"~\"
+		elif ch == \"Ç\":
+			key = \"C\"
+			extra = \",\"
+		var rows: Array = FONT.get(key, FONT[\" \"])
+		for r in 5:
+			var bits: int = rows[r]
+			for b in 3:
+				if bits & (4 >> b):
+					rect(x + b * scale, y + r * scale, scale, scale, col)
+		if extra == \"~\":
+			rect(x + scale, y - scale, scale, scale, col)
+		elif extra == \",\":
+			rect(x + scale, y + 5 * scale, scale, scale, col)
+
+
+# ===========================================================================
+# Ciclo de vida
+# ===========================================================================
+func _ready() -> void:
+	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_build_collisions()
+	_build_zones()
+	_render_static_art()
+	_build_animated()
+	_build_spawns()
+	_build_lighting()
+
+
+func _process(delta: float) -> void:
+	_t += delta
+	for i in _torches.size():
+		_torches[i].texture = _torch_tex[int(_t * 7.0 + i * 1.3) % 3]
+	for i in _ghosts.size():
+		_ghosts[i].position.y = _ghost_y[i] + roundi(sin(_t * 2.0 + i)) * PX
+	for i in _bats.size():
+		_bats[i].texture = _bat_tex[int(_t * 6.0 + i) % 2]
+		_bats[i].position.x = _bat_pos[i].x + roundi(sin(_t * 0.8 + i) * 8.0) * PX
+		_bats[i].position.y = _bat_pos[i].y + roundi(sin(_t * 1.3 + i * 2.0) * 3.0) * PX
+	for i in _lights.size():
+		_lights[i].energy = 1.0 + 0.18 * sin(_t * 9.0 + i * 1.7) + 0.08 * sin(_t * 23.0 + i)
+
+
+# ===========================================================================
+# API pública
+# ===========================================================================
+func get_spawn(spawn_name: String) -> Vector2:
+	return to_global(SPAWNS.get(spawn_name, SPAWNS[\"entrada\"]))
+
+
+func teleport_to_floor(body: Node2D, floor_id: String) -> void:
+	body.global_position = to_global(Vector2(ELEV_X, FLOORS[floor_id]))
+	if body is CharacterBody2D:
+		body.velocity = Vector2.ZERO
+
+
+# ===========================================================================
+# Helpers
+# ===========================================================================
+func _fy(fid: String) -> int:
+	return roundi(float(FLOORS[fid]) / PX)
+
+
+func _ceil_y(fid: String) -> int:
+	return roundi(float(CEILS[fid]) / PX)
+
+
+func _tex_rows(rows: Array, pal: Dictionary = PAL) -> ImageTexture:
+	var wd := 0
+	for r in rows:
+		wd = maxi(wd, (r as String).length())
+	var cv := PixelCanvas.new(wd, rows.size())
+	cv.sprite(rows, pal, 0, 0)
+	return ImageTexture.create_from_image(cv.img)
+
+
+func _make_sprite(tex: Texture2D, pos: Vector2, parent: Node) -> Sprite2D:
+	var s := Sprite2D.new()
+	s.texture = tex
+	s.centered = false
+	s.scale = Vector2(PX, PX)
+	s.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	s.position = pos
+	parent.add_child(s)
+	return s
+
+
+func _add_solid(parent: Node, rect: Rect2, one_way := false) -> void:
+	var body := StaticBody2D.new()
+	body.position = rect.get_center()
+	var cs := CollisionShape2D.new()
+	var shape := RectangleShape2D.new()
+	shape.size = rect.size
+	cs.shape = shape
+	cs.one_way_collision = one_way
+	body.add_child(cs)
+	parent.add_child(body)
+
+
+func _add_zone(parent: Node, zone_name: String, rect: Rect2) -> Area2D:
+	var a := Area2D.new()
+	a.name = zone_name
+	a.position = rect.get_center()
+	var cs := CollisionShape2D.new()
+	var shape := RectangleShape2D.new()
+	shape.size = rect.size
+	cs.shape = shape
+	a.add_child(cs)
+	parent.add_child(a)
+	return a
+
+
+# ===========================================================================
+# Física: lajes, paredes, rampas
+# ===========================================================================
+func _build_collisions() -> void:
+	var holder := Node2D.new()
+	holder.name = \"Collisions\"
+	add_child(holder)
+
+	var solids: Array[Rect2] = [
+		Rect2(0, 0, LEFT, MAP_SIZE.y),
+		Rect2(RIGHT, 0, MAP_SIZE.x - RIGHT, MAP_SIZE.y),
+		Rect2(0, 0, MAP_SIZE.x, TOP),
+		Rect2(LEFT, Y_G, RIGHT - LEFT, MAP_SIZE.y - Y_G),
+	]
+	for fid in [\"1\", \"2\", \"3\"]:
+		var y: float = FLOORS[fid]
+		solids.append(Rect2(STAIR_X1, y, RIGHT - STAIR_X1, SLAB_H))
+		# trecho sobre a escada: dá para subir pelas rampas por baixo
+		_add_solid(holder, Rect2(LEFT, y, STAIR_X1 - LEFT, SLAB_H), true)
+	for r in solids:
+		_add_solid(holder, r)
+
+	# Escadas em zigue-zague (rampas de ~42°, dentro do padrão de 45° do Godot)
+	var ramps := [
+		[Vector2(STAIR_X0, Y_G), Vector2(STAIR_X1, Y_1)],
+		[Vector2(STAIR_X1, Y_1), Vector2(STAIR_X0, Y_2)],
+		[Vector2(STAIR_X0, Y_2), Vector2(STAIR_X1, Y_3)],
+	]
+	for r in ramps:
+		var a: Vector2 = r[0]
+		var b: Vector2 = r[1]
+		var body := StaticBody2D.new()
+		var cp := CollisionPolygon2D.new()
+		cp.polygon = PackedVector2Array([a, b, b + Vector2(0, 14), a + Vector2(0, 14)])
+		body.add_child(cp)
+		holder.add_child(body)
+
+
+func _build_zones() -> void:
+	var zones := Node2D.new()
+	zones.name = \"Zones\"
+	add_child(zones)
+
+	for d in DOORS:
+		var fy: float = FLOORS[d[\"f\"]]
+		var id: String = d[\"id\"]
+		var z := _add_zone(zones, id, Rect2(float(d[\"x\"]) - 28.0, fy - 92.0, 56.0, 92.0))
+		z.body_entered.connect(func(body: Node2D) -> void: door_entered.emit(id, body))
+
+	for fid in FLOORS:
+		var fy2: float = FLOORS[fid]
+		var id2: String = fid
+		var ez := _add_zone(zones, \"Elevador_\" + fid, Rect2(ELEV_X - 48.0, fy2 - 124.0, 96.0, 124.0))
+		ez.body_entered.connect(func(body: Node2D) -> void: elevator_entered.emit(id2, body))
+		ez.body_exited.connect(func(body: Node2D) -> void: elevator_exited.emit(id2, body))
+
+
+# ===========================================================================
+# Arte estática
+# ===========================================================================
+func _render_static_art() -> void:
+	var c := PixelCanvas.new(ART_W, ART_H)
+	_art_background(c)
+	_art_structure(c)
+	_art_stairs(c)
+	_art_ground(c)
+	_art_floor1_like(c, \"1\")
+	_art_floor2(c)
+	_art_floor1_like(c, \"3\")
+	_art_doors(c)
+	_art_elevator(c)
+	_art_extras(c)
+
+	var spr := Sprite2D.new()
+	spr.name = \"PixelArt\"
+	spr.texture = ImageTexture.create_from_image(c.img)
+	spr.centered = false
+	spr.scale = Vector2(PX, PX)
+	spr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	spr.z_index = -10
+	add_child(spr)
+
+
+func _wall(c: PixelCanvas, x: int, y: int, w: int, h: int) -> void:
+	c.rect(x, y, w, h, WALL)
+	for yy in range(y, y + h):
+		for xx in range(x, x + w):
+			var n := c.hash2(xx, yy)
+			if n < 0.05:
+				c.px(xx, yy, WALL_SH)
+			elif n > 0.985:
+				c.px(xx, yy, WALL_HI)
+	c.rect(x, y + h - 9, w, 9, STRIPE)
+	c.hline(x, y + h - 9, w, STRIPE_HI)
+	c.hline(x, y + h - 1, w, STRIPE_DK)
+	c.rect(x, y + 3, w, 2, PIPE)
+	c.hline(x, y + 3, w, PIPE_HI)
+
+
+func _art_background(c: PixelCanvas) -> void:
+	c.rect(0, 0, ART_W, ART_H, SKY)
+	for fid in FLOORS:
+		var top := _ceil_y(fid)
+		var bottom := _fy(fid)
+		var h := bottom - top
+		c.bricks(A_LEFT, top, A_STAIR1 - A_LEFT, h, BRICK1, MORTAR, 11)
+		_wall(c, A_STAIR1, top, A_SHAFT_L - A_STAIR1, h)
+		c.bricks(A_SHAFT_L, top, A_SHAFT_R - A_SHAFT_L, h, BRICK2, MORTAR, 23)
+		c.rect(A_SHAFT_L + 9, top, 28, h, Color(\"1c1612\"))
+		if fid == \"2\":
+			c.bricks(A_SHAFT_R, top, A_RIGHT - A_SHAFT_R, h, BRICK1, MORTAR, 37)
+		else:
+			_wall(c, A_SHAFT_R, top, A_RIGHT - A_SHAFT_R, h)
+
+
+func _art_structure(c: PixelCanvas) -> void:
+	c.slab(0, 0, ART_W, 4, SLAB, SLAB_HI, SLAB_DK)
+	c.bricks(0, 4, A_LEFT, ART_H - 4, BRICK2, MORTAR, 5)
+	c.bricks(A_RIGHT, 4, ART_W - A_RIGHT, ART_H - 4, BRICK2, MORTAR, 9)
+	c.slab(A_LEFT, 240, A_RIGHT - A_LEFT, ART_H - 240, SLAB, SLAB_HI, SLAB_DK)
+	for fid in [\"1\", \"2\", \"3\"]:
+		c.slab(A_LEFT, _fy(fid), A_RIGHT - A_LEFT, 6, SLAB, SLAB_HI, SLAB_DK)
+
+
+func _art_stairs(c: PixelCanvas) -> void:
+	var ramps := [
+		[Vector2i(A_STAIR0, 240), Vector2i(A_STAIR1, 180)],
+		[Vector2i(A_STAIR1, 180), Vector2i(A_STAIR0, 120)],
+		[Vector2i(A_STAIR0, 120), Vector2i(A_STAIR1, 60)],
+	]
+	var n := 15
+	for r in ramps:
+		var a: Vector2i = r[0]
+		var b: Vector2i = r[1]
+		for i in range(n):
+			var x0 := a.x + roundi(float(b.x - a.x) * i / n)
+			var x1 := a.x + roundi(float(b.x - a.x) * (i + 1) / n)
+			var y0 := a.y + roundi(float(b.y - a.y) * i / n)
+			var lx := mini(x0, x1)
+			var sw := absi(x1 - x0) + 1
+			c.rect(lx, y0, sw, 1, WOOD_HI)
+			c.rect(lx, y0 + 1, sw, 2, WOOD)
+			c.rect(lx, y0 + 3, sw, 1, WOOD_DK)
+		c.line(a.x, a.y + 4, b.x, b.y + 4, WOOD_DK)
+		# corrimão
+		c.line(a.x, a.y - 12, b.x, b.y - 12, STEEL_DK)
+		for i in range(0, n + 1, 3):
+			var qx := a.x + roundi(float(b.x - a.x) * i / n)
+			var qy := a.y + roundi(float(b.y - a.y) * i / n)
+			c.vline(qx, qy - 12, 12, STEEL_DK)
+
+
+# ---- helpers de objetos ----------------------------------------------------
+func _sign(c: PixelCanvas, r: Rect2i, txt: String, bg: Color, fg: Color) -> void:
+	c.rect(r.position.x, r.position.y, r.size.x, r.size.y, bg)
+	c.outline(r.position.x, r.position.y, r.size.x, r.size.y, INK)
+	var th := txt.split(\"\\n\").size() * 6 - 1
+	c.text_center(txt, r.position.x + r.size.x / 2, r.position.y + (r.size.y - th) / 2, fg)
+
+
+func _desk(c: PixelCanvas, cx: int, fy: int) -> void:
+	c.rect(cx - 7, fy - 9, 14, 2, Color(\"3a3f4a\"))
+	c.hline(cx - 7, fy - 9, 14, Color(\"5a6070\"))
+	c.vline(cx - 6, fy - 7, 7, Color(\"2b2f36\"))
+	c.vline(cx + 5, fy - 7, 7, Color(\"2b2f36\"))
+	c.rect(cx - 4, fy - 15, 8, 6, INK)
+	c.rect(cx - 3, fy - 14, 6, 4, CYAN)
+	c.hline(cx - 3, fy - 14, 6, Color(\"8fd8f0\"))
+	c.rect(cx - 1, fy - 10, 2, 1, INK)
+	# cadeira
+	c.rect(cx + 8, fy - 13, 1, 6, Color(\"20304a\"))
+	c.rect(cx + 6, fy - 7, 4, 1, Color(\"20304a\"))
+	c.vline(cx + 8, fy - 6, 5, Color(\"20304a\"))
+	c.hline(cx + 6, fy - 1, 5, Color(\"20304a\"))
+
+
+func _monitor(c: PixelCanvas, x: int, y: int, w: int, h: int, col: Color) -> void:
+	c.rect(x, y, w, h, INK)
+	c.rect(x + 1, y + 1, w - 2, h - 2, col)
+	c.hline(x + 1, y + 1, w - 2, col.lightened(0.25))
+
+
+func _pumpkin(c: PixelCanvas, cx: int, by: int, r: int) -> void:
+	var ry := int(r * 0.8)
+	var cy := by - ry
+	c.ellipse(cx, cy, r, ry, ORANGE)
+	c.vline(cx - r / 2, cy - ry + 1, ry * 2 - 1, ORANGE_DK)
+	c.vline(cx + r / 2, cy - ry + 1, ry * 2 - 1, ORANGE_DK)
+	c.hline(cx - r / 3, cy - ry + 1, r / 2, ORANGE.lightened(0.3))
+	c.rect(cx - 1, cy - ry - 2, 2, 3, GREEN)
+	if r < 8:
+		c.px(cx - 2, cy - 1, YELLOW)
+		c.px(cx + 1, cy - 1, YELLOW)
+		c.hline(cx - 2, cy + 1, 4, YELLOW)
+	else:
+		var k := float(r) / 12.0
+		var e := func(v: float) -> int: return roundi(v * k)
+		c.poly([Vector2i(cx - e.call(8.0), cy - e.call(1.0)), Vector2i(cx - e.call(2.0), cy - e.call(1.0)), Vector2i(cx - e.call(5.0), cy - e.call(7.0))], YELLOW)
+		c.poly([Vector2i(cx + e.call(2.0), cy - e.call(1.0)), Vector2i(cx + e.call(8.0), cy - e.call(1.0)), Vector2i(cx + e.call(5.0), cy - e.call(7.0))], YELLOW)
+		c.poly([
+			Vector2i(cx - e.call(8.0), cy + e.call(2.0)), Vector2i(cx - e.call(5.0), cy + e.call(6.0)),
+			Vector2i(cx - e.call(2.0), cy + e.call(3.0)), Vector2i(cx + e.call(2.0), cy + e.call(6.0)),
+			Vector2i(cx + e.call(5.0), cy + e.call(3.0)), Vector2i(cx + e.call(8.0), cy + e.call(2.0)),
+			Vector2i(cx + e.call(5.0), cy + e.call(8.0)), Vector2i(cx - e.call(5.0), cy + e.call(8.0)),
+		], YELLOW)
+
+
+func _bunting(c: PixelCanvas, x0: int, x1: int, y: int) -> void:
+	var span := x1 - x0
+	var prev := Vector2i(x0, y)
+	for i in range(1, 21):
+		var t := i / 20.0
+		var p := Vector2i(x0 + roundi(t * span), y + roundi(sin(t * PI) * 4.0))
+		c.line(prev.x, prev.y, p.x, p.y, INK)
+		prev = p
+	for i in range(1, 10):
+		var t2 := i / 10.0
+		var fx := x0 + roundi(t2 * span)
+		var fyy := y + roundi(sin(t2 * PI) * 4.0)
+		var col := PURPLE if i % 2 == 0 else ORANGE
+		c.poly([Vector2i(fx - 2, fyy + 1), Vector2i(fx + 2, fyy + 1), Vector2i(fx, fyy + 5)], col)
+
+
+func _web(c: PixelCanvas, x: int, y: int, sx: int, sy: int, size: int) -> void:
+	var col := Color(0.92, 0.92, 1.0, 0.6)
+	var rays := 5
+	for i in rays:
+		var ang := (PI / 2.0) * i / (rays - 1)
+		c.line(x, y, x + sx * roundi(cos(ang) * size), y + sy * roundi(sin(ang) * size), col)
+	for k in range(1, 4):
+		var rad := size * k / 3
+		var prev := Vector2i.ZERO
+		for i in rays:
+			var ang2 := (PI / 2.0) * i / (rays - 1)
+			var p := Vector2i(x + sx * roundi(cos(ang2) * rad), y + sy * roundi(sin(ang2) * rad))
+			if i > 0:
+				c.line(prev.x, prev.y, p.x, p.y, col)
+			prev = p
+
+
+func _spider(c: PixelCanvas, x: int, y: int, s: int, body: Color, thread: int = 0) -> void:
+	# (x, y) = centro do corpo
+	if thread > 0:
+		c.vline(x, y - thread, thread, Color(0.9, 0.9, 1.0, 0.6))
+	for i in 4:
+		for sx in [-1, 1]:
+			var knee := Vector2i(x + sx * (3 + i * 2) * s / 2, y - (3 - i) * s / 2)
+			var foot := Vector2i(x + sx * (5 + i * 2) * s / 2, y + (3 + i) * s / 2)
+			c.line(x, y, knee.x, knee.y, body)
+			c.line(knee.x, knee.y, foot.x, foot.y, body)
+	c.ellipse(x, y, 2 * s, roundi(1.5 * s), body)
+	c.disc(x - 2 * s, y - s, maxi(s, 1), body)
+	if s >= 3:
+		c.ellipse(x + s, y, s, s, Color(\"e6e0ee\"))
+		c.px(x - 2 * s - 1, y - s - 1, Color(\"ff3030\"))
+		c.px(x - 2 * s + 1, y - s - 1, Color(\"ff3030\"))
+
+
+func _night_window(c: PixelCanvas, x: int, y: int, w: int, h: int, seed_: int, with_bat: bool) -> void:
+	c.rect(x, y, w, h, Color(\"0d1633\"))
+	for i in 14:
+		c.px(x + 1 + int(c.hash2(i + seed_, 3) * (w - 2)), y + 1 + int(c.hash2(i, seed_) * (h * 0.5)), Color(\"c8d0ff\"))
+	c.disc(x + w - 9, y + 7, 3, Color(\"f4e8b0\"))
+	if with_bat:
+		c.sprite(BAT_FRAMES[0], PAL, x + w - 14, y + 4)
+	var bx := x + 1
+	var k := 0
+	while bx < x + w - 2:
+		var bw := 5 + int(c.hash2(k, seed_) * 6)
+		var bh := 5 + int(c.hash2(seed_, k) * (h * 0.5))
+		bw = mini(bw, x + w - 1 - bx)
+		c.rect(bx, y + h - bh, bw, bh, Color(\"171f3d\"))
+		for wy in range(y + h - bh + 2, y + h - 1, 3):
+			for wx in range(bx + 1, bx + bw - 1, 2):
+				if c.hash2(wx, wy + seed_) > 0.55:
+					c.px(wx, wy, Color(\"f4d27a\"))
+		bx += bw + 1
+		k += 1
+	c.outline(x, y, w, h, INK)
+	c.vline(x + w / 2, y, h, INK)
+	c.hline(x, y + h - 1, w, INK)
+
+
+# ---- térreo ------------------------------------------------------------------
+func _art_ground(c: PixelCanvas) -> void:
+	var fy := _fy(\"G\")
+	# entrada principal
+	c.rect(107, fy - 29, 53, 29, Color(\"1e1b2b\"))
+	for i in 4:
+		c.rect(114 + i * 3, fy - 6 - i * 3, 32 - i * 6, 3, Color(\"3a3a4c\"))
+		c.hline(114 + i * 3, fy - 6 - i * 3, 32 - i * 6, Color(\"55556b\"))
+	c.outline(107, fy - 29, 53, 29, INK)
+	_sign(c, Rect2i(99, fy - 53, 71, 13), \"ENTRADA PRINCIPAL\\nFATEC CAMPINAS\", Color(\"e8e8e8\"), INK)
+	_sign(c, Rect2i(105, fy - 39, 61, 9), \"FELIZ HALLOWEEN\", Color(\"201a1a\"), Color(\"ff8a1f\"))
+	# recepção da Game Jam
+	_sign(c, Rect2i(285, fy - 36, 47, 13), \"RECEPÇÃO DE\\nGAME JAM\", Color(\"1a1410\"), YELLOW)
+	c.rect(287, fy - 15, 39, 15, Color(\"14101a\"))
+	c.hline(287, fy - 15, 39, Color(\"3a3050\"))
+	_monitor(c, 313, fy - 21, 7, 6, CYAN)
+	# folhas e doces
+	for cxl in [104, 171]:
+		for i in 42:
+			var xx: int = cxl - 12 + int(c.hash2(i, cxl) * 24)
+			var yy := fy - 1 - int(c.hash2(cxl, i) * 3)
+			var cols := [Color(\"c8641a\"), Color(\"8a4a1a\"), Color(\"e8a030\"), Color(\"6a2a8a\"), Color(\"d03050\")]
+			c.px(xx, yy, cols[int(c.hash2(i, i + cxl) * cols.size())])
+	# personagens
+	c.sprite(ZOMBIE, PAL, 11, fy - 15)
+	var statue_pal := PAL.duplicate()
+	statue_pal[\"G\"] = Color(\"9a9a98\")
+	statue_pal[\"b\"] = Color(\"7a7a7e\")
+	c.sprite(ZOMBIE, statue_pal, 82, fy - 15, true)
+	c.rect(80, fy - 1, 13, 1, SLAB_DK)
+
+
+# ---- andares 1 e 3 (parecidos) ---------------------------------------------
+func _art_floor1_like(c: PixelCanvas, fid: String) -> void:
+	var fy := _fy(fid)
+	var seed_ := 5 if fid == \"1\" else 17
+	_bunting(c, 80, 150, fy - 47)
+	# mural de avisos
+	c.rect(101, fy - 28, 14, 12, Color(\"3a6b4a\"))
+	c.outline(101, fy - 28, 14, 12, WOOD)
+	for i in 4:
+		c.rect(103 + (i % 2) * 6, fy - 26 + (i / 2) * 5, 4, 4, Color(\"e8e4d4\"))
+	# janela noturna + mesas
+	_night_window(c, 247, fy - 39, 70, 25, seed_, fid == \"3\")
+	var desks := [270, 287, 304] if fid == \"1\" else [270, 296]
+	for dx in desks:
+		_desk(c, dx, fy)
+	# rack de servidor
+	c.rect(325, fy - 25, 11, 25, Color(\"8a949c\"))
+	c.outline(325, fy - 25, 11, 25, INK)
+	for i in 5:
+		c.rect(327, fy - 23 + i * 4, 7, 3, Color(\"3a4148\"))
+		c.px(333, fy - 22 + i * 4, Color(\"5cff7a\"))
+	# monitores na parede
+	for i in 3:
+		_monitor(c, 339, fy - 35 + i * 6, 6, 5, CYAN if i % 2 == 0 else BLUE)
+	if fid == \"1\":
+		# brasão FATEC (morcego)
+		var cx := 40
+		var cy := fy - 38
+		var shape := [Vector2i(0, 0), Vector2i(-8, -6), Vector2i(-16, -2), Vector2i(-12, 3), Vector2i(-6, 1),
+			Vector2i(0, 6), Vector2i(6, 1), Vector2i(12, 3), Vector2i(16, -2), Vector2i(8, -6)]
+		var shadow: Array = []
+		var main: Array = []
+		for p in shape:
+			shadow.append(Vector2i(cx + p.x * 1 + 1, cy + p.y + 2))
+			main.append(Vector2i(cx + p.x, cy + p.y + 1))
+		c.poly(shadow, Color(\"2a1530\"))
+		c.poly(main, Color(\"4a1f3d\"))
+		c.text_center(\"FATEC\", cx, cy - 1, Color(\"e6e6f0\"))
+	else:
+		# faixa da Game Jam
+		_sign(c, Rect2i(250, 7, 85, 14), \"GAME JAM 2026\\nO RETORNO DO VAMPIRO\", PURPLE_DK, Color(\"ffb347\"))
+
+
+# ---- andar 2 (Lab Max) -------------------------------------------------------
+func _art_floor2(c: PixelCanvas) -> void:
+	var fy := _fy(\"2\")
+	# telão e monitores do Lab Max
+	_sign(c, Rect2i(103, fy - 34, 40, 22), \"FATEC\\nHALLOWEEN\\nGAME JAM\", Color(\"2b1b4a\"), YELLOW)
+	for i in 2:
+		for j in 2:
+			_monitor(c, 85 + i * 8, fy - 36 + j * 8, 7, 6, BLUE if j == 0 else CYAN)
+			_monitor(c, 146 + i * 8, fy - 36 + j * 8, 7, 6, BLUE if j == 0 else CYAN)
+	for dx in [92, 112, 132, 152]:
+		_desk(c, dx, fy)
+	# sala de vidro com servidores (ala direita)
+	c.rect(279, fy - 31, 28, 31, Color(\"c9d6e0\"))
+	for i in 3:
+		c.rect(282 + i * 8, fy - 24, 6, 24, Color(\"6c737a\"))
+		c.outline(282 + i * 8, fy - 24, 6, 24, INK)
+		for j in 4:
+			c.px(284 + i * 8, fy - 21 + j * 5, Color(\"5cff7a\"))
+	c.outline(279, fy - 31, 28, 31, INK)
+	c.vline(293, fy - 31, 31, INK)
+	# decoração
+	c.sprite(SCARECROW, PAL, 12, fy - 14)
+	_spider(c, 322, fy - 12, 3, Color(\"5b3a8c\"))
+	_spider(c, 245, fy - 40, 1, INK, 16)
+	_spider(c, 335, fy - 36, 1, INK, 10)
+
+
+# ---- portas -----------------------------------------------------------------
+func _art_doors(c: PixelCanvas) -> void:
+	for d in DOORS:
+		var fy := _fy(d[\"f\"])
+		var cx := roundi(float(d[\"x\"]) / PX)
+		var x := cx - 6
+		var y := fy - 23
+		if d[\"open\"]:
+			c.rect(x, y, 13, 23, INK)
+			c.poly([Vector2i(x + 13, y), Vector2i(x + 19, y + 2), Vector2i(x + 19, y + 23), Vector2i(x + 13, y + 23)], WOOD)
+			c.vline(x + 13, y, 23, WOOD_HI)
+			c.outline(x, y, 13, 23, WOOD_DK)
+		else:
+			c.rect(x, y, 13, 23, WOOD)
+			c.outline(x, y, 13, 23, WOOD_DK)
+			c.rect(x + 3, y + 3, 7, 9, Color(\"5a8fb0\"))
+			c.outline(x + 3, y + 3, 7, 9, WOOD_DK)
+			c.hline(x + 4, y + 4, 3, Color(\"a8d0e4\"))
+			c.rect(x + 3, y + 15, 7, 5, WOOD_HI)
+			c.px(x + 10, y + 13, YELLOW)
+		var label: String = d[\"label\"]
+		if label != \"\":
+			var tw := c.text_width(label) + 4
+			var plate_x := cx - tw / 2
+			c.rect(plate_x, y - 8, tw, 7, WHITE)
+			c.outline(plate_x, y - 8, tw, 7, INK)
+			c.text(label, plate_x + 2, y - 7, INK)
+
+
+# ---- elevador ------------------------------------------------------------------
+func _art_elevator(c: PixelCanvas) -> void:
+	for fid in FLOORS:
+		var fy := _fy(fid)
+		var x := A_ELEV - 12
+		var y := fy - 31
+		if fid == \"2\":
+			c.rect(x, y, 24, 31, INK)
+			c.rect(x, y, 3, 31, STEEL)
+			c.rect(x + 21, y, 3, 31, STEEL)
+			c.disc(A_ELEV, fy - 20, 2, Color(\"1a1a2e\"))
+			c.rect(A_ELEV - 3, fy - 17, 6, 17, Color(\"1a1a2e\"))
+			c.px(A_ELEV - 1, fy - 21, Color(\"ff3030\"))
+			c.px(A_ELEV + 1, fy - 21, Color(\"ff3030\"))
+		else:
+			c.rect(x, y, 24, 31, STEEL)
+			c.rect(x + 2, y + 2, 20, 27, GLASS if fid == \"G\" else Color(\"b8c4cc\"))
+			c.hline(x + 2, y + 2, 20, WHITE)
+			c.vline(A_ELEV, y, 31, STEEL_DK)
+			if fid == \"G\":
+				c.sprite(SKULL, PAL, A_ELEV - 3, fy - 24)
+		c.outline(x, y, 24, 31, INK)
+		# placa do andar
+		c.rect(A_ELEV - 4, y - 8, 9, 7, INK)
+		c.text_center(fid, A_ELEV, y - 7, WHITE)
+		# botoeira
+		c.rect(x + 28, fy - 23, 3, 7, Color(\"3d5a3d\"))
+		c.px(x + 29, fy - 21, Color(\"ff5050\"))
+
+
+# ---- teias e detalhes finais ----------------------------------------------
+func _art_extras(c: PixelCanvas) -> void:
+	for fid in FLOORS:
+		var top := _ceil_y(fid)
+		_web(c, A_LEFT, top, 1, 1, 12)
+		_web(c, A_SHAFT_L, top, -1, 1, 9)
+		_web(c, A_RIGHT, top, -1, 1, 12)
+	_web(c, A_STAIR1, _fy(\"1\") + 6, -1, 1, 14)
+	# abóboras
+	for p in PUMPKINS:
+		_pumpkin(c, roundi(float(p[\"x\"]) / PX), _fy(p[\"f\"]), p[\"r\"])
+	# aranhas pendentes na caixa de escada
+	_spider(c, 22, _ceil_y(\"1\") + 22, 1, INK, 18)
+	_spider(c, 18, _ceil_y(\"G\") + 30, 1, INK, 24)
+	_spider(c, 11, 20, 1, INK, 12)
+
+
+# ===========================================================================
+# Sprites animados
+# ===========================================================================
+func _build_animated() -> void:
+	var layer := Node2D.new()
+	layer.name = \"Animated\"
+	layer.z_index = 5
+	add_child(layer)
+
+	for rows in TORCH_FRAMES:
+		_torch_tex.append(_tex_rows(rows))
+	for rows in BAT_FRAMES:
+		_bat_tex.append(_tex_rows(rows))
+	var ghost_tex := _tex_rows(GHOST)
+
+	for fid in TORCH_X:
+		for x in TORCH_X[fid]:
+			var s := _make_sprite(_torch_tex[0], Vector2(float(x) - 14.0, float(FLOORS[fid]) - 120.0), layer)
+			_torches.append(s)
+
+	for g in GHOSTS:
+		var gy: float = float(FLOORS[g[0]]) - float(g[2]) - 48.0
+		var gs := _make_sprite(ghost_tex, Vector2(float(g[1]) - 18.0, gy), layer)
+		_ghosts.append(gs)
+		_ghost_y.append(gy)
+
+	for b in BAT_SPOTS:
+		var pos := Vector2(float(b[1]) - 18.0, float(FLOORS[b[0]]) - float(b[2]) - 20.0)
+		var bs := _make_sprite(_bat_tex[0], pos, layer)
+		_bats.append(bs)
+		_bat_pos.append(pos)
+
+
+func _build_spawns() -> void:
+	var holder := Node2D.new()
+	holder.name = \"Spawns\"
+	add_child(holder)
+	for key in SPAWNS:
+		var m := Marker2D.new()
+		m.name = key
+		m.position = SPAWNS[key]
+		m.add_to_group(\"spawn\")
+		holder.add_child(m)
+
+
+# ===========================================================================
+# Iluminação (brilho em degraus, combina com pixel art)
+# ===========================================================================
+func _build_lighting() -> void:
+	if not use_lighting:
+		return
+	var cm := CanvasModulate.new()
+	cm.color = ambient_color
+	add_child(cm)
+	var tex := _light_texture()
+
+	for fid in TORCH_X:
+		for x in TORCH_X[fid]:
+			_add_light(tex, Vector2(float(x), float(FLOORS[fid]) - 100.0), 1.4)
+	for p in PUMPKINS:
+		var r: int = p[\"r\"]
+		_add_light(tex, Vector2(float(p[\"x\"]), float(FLOORS[p[\"f\"]]) - r * PX), 2.4 if r > 8 else 0.8)
+
+
+func _add_light(tex: Texture2D, pos: Vector2, light_scale: float) -> void:
+	var l := PointLight2D.new()
+	l.texture = tex
+	l.position = pos
+	l.color = Color(1.0, 0.62, 0.25)
+	l.texture_scale = light_scale
+	add_child(l)
+	_lights.append(l)
+
+
+func _light_texture() -> GradientTexture2D:
+	var g := Gradient.new()
+	g.interpolation_mode = Gradient.GRADIENT_INTERPOLATE_CONSTANT
+	g.offsets = PackedFloat32Array([0.0, 0.35, 0.7, 1.0])
+	g.colors = PackedColorArray([Color(1, 1, 1, 1), Color(1, 1, 1, 0.6), Color(1, 1, 1, 0.28), Color(1, 1, 1, 0)])
+	var t := GradientTexture2D.new()
+	t.gradient = g
+	t.width = 256
+	t.height = 256
+	t.fill = GradientTexture2D.FILL_RADIAL
+	t.fill_from = Vector2(0.5, 0.5)
+	t.fill_to = Vector2(0.5, 0.0)
+	return t
+"
+
+[node name="fatec_map" type="Node2D" unique_id=1155579160]
+script = SubResource("GDScript_7y7lw")

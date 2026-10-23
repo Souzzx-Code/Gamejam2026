@@ -1,18 +1,11 @@
 [gd_scene format=3 uid="uid://bt0gvkgcn2iex"]
 
 [ext_resource type="PackedScene" uid="uid://bq5jux0mkcs0o" path="res://entidades/player.tscn" id="1_5kiuu"]
-
-[sub_resource type="RectangleShape2D" id="RectangleShape2D_b7rah"]
-size = Vector2(95.5, 12.125)
+[ext_resource type="Script" uid="uid://c7nkb036xnfab" path="res://scripts/fatec_map_pixel (1).gd" id="1_dbls1"]
 
 [node name="Game" type="Node2D" unique_id=1164052082]
-
-[node name="StaticBody2D" type="StaticBody2D" parent="." unique_id=615480441]
-
-[node name="CollisionShape2D" type="CollisionShape2D" parent="StaticBody2D" unique_id=1547228811]
-position = Vector2(38, 100)
-shape = SubResource("RectangleShape2D_b7rah")
-debug_color = Color(0.21410742, 0.63260835, 0.28477612, 0.41960785)
+script = ExtResource("1_dbls1")
 
 [node name="Player" parent="." unique_id=1899720134 instance=ExtResource("1_5kiuu")]
-position = Vector2(0, 0)
+z_index = 1
+position = Vector2(301, 245)
