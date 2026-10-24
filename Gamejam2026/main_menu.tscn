@@ -1,0 +1,119 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/main_menu.gd" id="1_main_menu"]
+
+[node name="MainMenu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_main_menu")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.035, 0.018, 0.075, 1)
+
+[node name="Moon" type="Label" parent="."]
+layout_mode = 0
+offset_left = 76.0
+offset_top = 55.0
+offset_right = 180.0
+offset_bottom = 160.0
+theme_override_colors/font_color = Color(1, 0.82, 0.45, 1)
+theme_override_font_sizes/font_size = 88
+text = "◐"
+
+[node name="Bats" type="Label" parent="."]
+layout_mode = 0
+offset_left = 1450.0
+offset_top = 75.0
+offset_right = 1810.0
+offset_bottom = 150.0
+theme_override_colors/font_color = Color(0.45, 0.25, 0.65, 1)
+theme_override_font_sizes/font_size = 42
+text = "⋀  ⋀  ⋀"
+
+[node name="Pumpkin" type="Label" parent="."]
+layout_mode = 0
+offset_left = 1500.0
+offset_top = 820.0
+offset_right = 1740.0
+offset_bottom = 940.0
+theme_override_colors/font_color = Color(0.95, 0.35, 0.08, 1)
+theme_override_font_sizes/font_size = 78
+text = "☻"
+
+[node name="Content" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -360.0
+offset_top = -260.0
+offset_right = 360.0
+offset_bottom = 260.0
+theme_override_constants/separation = 18
+
+[node name="Eyebrow" type="Label" parent="Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.75, 0.45, 0.95, 1)
+theme_override_font_sizes/font_size = 22
+text = "FATEC CAMPINAS APRESENTA"
+horizontal_alignment = 1
+
+[node name="Title" type="Label" parent="Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.84, 0.35, 1)
+theme_override_font_sizes/font_size = 54
+text = "O RETORNO DO VAMPIRO"
+horizontal_alignment = 1
+
+[node name="Divider" type="Label" parent="Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.22, 0.25, 1)
+theme_override_font_sizes/font_size = 28
+text = "✦  ☠  ✦  ☠  ✦"
+horizontal_alignment = 1
+
+[node name="Description" type="Label" parent="Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.88, 0.84, 0.94, 1)
+theme_override_font_sizes/font_size = 21
+text = "Colete os números, complete suas tarefas\n e escape antes que o esqueleto alcance você!"
+horizontal_alignment = 1
+
+[node name="Buttons" type="VBoxContainer" parent="Content"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="StartButton" type="Button" parent="Content/Buttons"]
+custom_minimum_size = Vector2(0, 60)
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.9, 0.55, 1)
+theme_override_font_sizes/font_size = 26
+text = "JOGAR"
+
+[node name="Controls" type="Label" parent="Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.62, 0.58, 0.72, 1)
+theme_override_font_sizes/font_size = 17
+text = "A/D ou setas: mover   •   Espaço: pular   •   E: interagir"
+horizontal_alignment = 1
+
+[node name="ExitButton" type="Button" parent="Content/Buttons"]
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "SAIR"
+
+[connection signal="pressed" from="Content/Buttons/StartButton" to="." method="_on_start_button_pressed"]
+[connection signal="pressed" from="Content/Buttons/ExitButton" to="." method="_on_exit_button_pressed"]

@@ -2,6 +2,8 @@
 
 [ext_resource type="PackedScene" uid="uid://bq5jux0mkcs0o" path="res://entidades/player.tscn" id="1_5kiuu"]
 [ext_resource type="Script" uid="uid://c7nkb036xnfab" path="res://scripts/fatec_map_pixel (1).gd" id="1_dbls1"]
+[ext_resource type="AudioStream" uid="uid://gamek3tc2hpe" path="res://sprites/2026-10-24-09-24-17.mp3" id="3_33cqm"]
+[ext_resource type="PackedScene" path="res://entidades/skeleton.tscn" id="4_skeleton"]
 
 [node name="Game" type="Node2D" unique_id=1164052082]
 script = ExtResource("1_dbls1")
@@ -9,3 +11,10 @@ script = ExtResource("1_dbls1")
 [node name="Player" parent="." unique_id=1899720134 instance=ExtResource("1_5kiuu")]
 z_index = 1
 position = Vector2(301, 245)
+
+[node name="AudioStreamPlayer" type="AudioStreamPlayer" parent="." unique_id=1818303104]
+stream = ExtResource("3_33cqm")
+autoplay = true
+
+[node name="Skeleton" parent="." instance=ExtResource("4_skeleton")]
+position = Vector2(1100, 960)

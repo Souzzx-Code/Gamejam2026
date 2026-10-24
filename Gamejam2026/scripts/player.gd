@@ -1,11 +1,19 @@
 extends CharacterBody2D
 
+signal health_changed(current_health: int, max_health: int)
+signal died
+
 ## quando terminar de carregar todos os nós, o tipo de variável animated
 ## recebe o caminho de onde está o nó
 @onready var anim: AnimatedSprite2D = $AnimatedSprite2D
+@onready var health_label: Label = $HealthLabel
 
-const SPEED = 200.0
+const SPEED = 150.0
 const JUMP_VELOCITY = -300.0
+const MAX_HEALTH := 5
+
+var health := MAX_HEALTH
+var tasks_completed := 0
 
 # NOVO: referência à área de interação do jogador.
 # É necessário criar InteractionArea e CollisionShape2D como filhos do Player.
@@ -16,9 +24,30 @@ var nearby_interactable: Node2D = null
 
 
 func _ready() -> void:
+	add_to_group("player")
+	_update_health_label()
 	# NOVO: conecta os sinais da área de interação.
 	interaction_area.area_entered.connect(_on_area_entered)
 	interaction_area.area_exited.connect(_on_area_exited)
+
+
+func take_damage(amount: int) -> void:
+	if amount <= 0 or health <= 0:
+		return
+	health = maxi(health - amount, 0)
+	_update_health_label()
+	health_changed.emit(health, MAX_HEALTH)
+	print("O vampiro sofreu dano. Vida: ", health, "/", MAX_HEALTH)
+	if health == 0:
+		set_physics_process(false)
+		set_process(false)
+		anim.play("idle")
+		died.emit()
+
+
+func _update_health_label() -> void:
+	if health_label != null:
+		health_label.text = "VIDA: %d/%d" % [health, MAX_HEALTH] 
 
 
 func _physics_process(delta: float) -> void:
