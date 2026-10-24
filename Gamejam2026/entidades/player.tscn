@@ -150,11 +150,11 @@ sprite_frames = SubResource("SpriteFrames_p32a2")
 animation = &"walk"
 
 [node name="Camera2D" type="Camera2D" parent="." unique_id=2087333797]
-position = Vector2(714, 346)
-limit_left = 13
-limit_top = 15
-limit_right = 1913
-limit_bottom = 1054
+position = Vector2(543, 247)
+limit_left = -116
+limit_top = -48
+limit_right = 1804
+limit_bottom = 1032
 position_smoothing_enabled = true
 
 [node name="InteractionArea" type="Area2D" parent="." unique_id=220081844]

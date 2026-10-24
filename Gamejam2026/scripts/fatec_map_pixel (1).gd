@@ -263,6 +263,8 @@ var _tasks_completed := 0
 var _collected_digits := [false, false, false]
 var _health_bar: ProgressBar
 var _health_text: Label
+var _objective_text: Label
+var _tip_text: Label
 var _game_over_started := false
 var _win_layer: CanvasLayer
 var _won := false
@@ -485,11 +487,43 @@ func _ready() -> void:
 	_build_spawns()
 	_build_lighting()
 	_build_health_hud()
+	_build_objective_hud()
 	var player := get_tree().get_first_node_in_group("player")
 	if player != null:
 		player.connect("health_changed", _on_player_health_changed)
 		player.connect("died", _on_player_died)
 		_on_player_health_changed(int(player.get("health")), 5)
+
+
+func _build_objective_hud() -> void:
+	var layer := CanvasLayer.new()
+	layer.name = "ObjectiveHUD"
+	layer.layer = 9
+	add_child(layer)
+
+	var panel := ColorRect.new()
+	panel.position = Vector2(24, 24)
+	panel.size = Vector2(470, 118)
+	panel.color = Color(0.04, 0.03, 0.08, 0.88)
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(panel)
+
+	_objective_text = Label.new()
+	_objective_text.position = Vector2(16, 12)
+	_objective_text.add_theme_font_size_override("font_size", 20)
+	_objective_text.add_theme_color_override("font_color", Color("ffe27a"))
+	_objective_text.text = "OBJETIVO: 0/3 números coletados"
+	panel.add_child(_objective_text)
+
+	_tip_text = Label.new()
+	_tip_text.position = Vector2(16, 48)
+	_tip_text.add_theme_font_size_override("font_size", 15)
+	_tip_text.add_theme_color_override("font_color", Color("eef0f4"))
+	_tip_text.text = "Vá aos monitores azuis nos andares 1, 2 e 3.\nAproxime-se e pressione E para coletar."
+	panel.add_child(_tip_text)
+
+
+
 
 
 func _build_health_hud() -> void:
@@ -545,6 +579,16 @@ func _on_player_died() -> void:
 		return
 	_game_over_started = true
 	get_tree().change_scene_to_file("res://menu.tscn")
+
+
+func _update_objective_hud(total: int) -> void:
+	if _objective_text == null or _tip_text == null:
+		return
+	_objective_text.text = "OBJETIVO: %d/3 números coletados" % total
+	if total < 3:
+		_tip_text.text = "Monitores azuis: andares 1, 2 e 3.\nAproxime-se e pressione E para coletar."
+	else:
+		_tip_text.text = "Tarefas concluídas! Vá à saída no térreo.\nAproxime-se da porta e pressione E."
 
 
 func _process(delta: float) -> void:
@@ -741,8 +785,6 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif _director_body != null and _key_is(ke, KEY_E):
 		_obtain_network_cable()
 		get_viewport().set_input_as_handled()
-
-
 func _on_elevator_enter(fid: String, body: Node2D) -> void:
 	if not (body is CharacterBody2D):
 		return
@@ -996,6 +1038,11 @@ func _on_directoria_exit(body: Node2D) -> void:
 
 
 func _obtain_network_cable() -> void:
+	if _cable_obtained:
+		_network_message = "CABO DE REDE JA OBTIDO"
+		_network_digit_only = false
+		_open_network_panel(_director_body)
+		return
 	_cable_obtained = true
 	_network_message = "CABO DE REDE OBTIDO!"
 	_network_digit_only = false
@@ -1004,7 +1051,12 @@ func _obtain_network_cable() -> void:
 
 func _enable_network() -> void:
 	if not _cable_obtained:
-		_network_message = "PRECISA DO CABO DE REDE"
+		_network_message = "PEGUE O CABO NA DIRETORIA PRIMEIRO"
+		_network_digit_only = false
+		_open_network_panel(_server_body)
+		return
+	if _network_enabled:
+		_network_message = "CHAVE DE ACESSO JA OBTIDA"
 		_network_digit_only = false
 		_open_network_panel(_server_body)
 		return
@@ -1024,6 +1076,7 @@ func _read_monitor(index: int) -> void:
 			_collected_digits[index] = true
 			_tasks_completed += 1
 			task_completed.emit(_tasks_completed)
+			_update_objective_hud(_tasks_completed)
 			var player := get_tree().get_first_node_in_group("player")
 			if player != null:
 				player.set("tasks_completed", _tasks_completed)
